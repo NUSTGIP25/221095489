@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Facility Siting Tool - Premium Edition</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+
+  <!-- Audio for success chime -->
+  <audio id="successSound" src="https://cdn.pixabay.com/audio/2022/03/15/audio_b9c2cfdf2e.mp3"></audio>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0b0b0b;
+      color: #f8f8f8;
+    }
+
+    h2 {
+      text-align: center;
+      color: #ffd700;
+      margin-top: 30px;
+      font-size: 2.4em;
+      letter-spacing: 1.2px;
+      font-weight: 600;
+    }
+
+    .upload-container {
+      max-width: 600px;
+      margin: 30px auto;
+      background: #161616;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 0 25px rgba(255, 215, 0, 0.2);
+    }
+
+    .custom-file-input {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .custom-file-input input[type="file"] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      height: 100%;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .file-label {
+      display: block;
+      background: linear-gradient(135deg, #2e2e2e, #1a1a1a);
+      border: 2px solid #ffd700;
+      color: #ffd700;
+      padding: 14px 20px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 1em;
+      font-weight: 500;
+      transition: background 0.3s ease;
+    }
+
+    .file-label:hover {
+      background: linear-gradient(135deg, #3a3a3a, #1f1f1f);
+    }
+
+    button {
+      background: linear-gradient(45deg, #ffd700, #b8860b);
+      color: #000;
+      padding: 14px 22px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 1em;
+      width: 100%;
+      margin-top: 20px;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: linear-gradient(45deg, #ffec8b, #daa520);
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 15px;
+      color: #00ffcc;
+      font-weight: 500;
+    }
+
+    #map {
+      height: 600px;
+      width: 90%;
+      margin: 40px auto;
+      border: 2px solid #ffd700;
+      border-radius: 12px;
+      box-shadow: 0 0 30px rgba(255, 215, 0, 0.25);
+    }
+
+    @media (max-width: 768px) {
+      h2 {
+        font-size: 1.6em;
+      }
+
+      .upload-container {
+        padding: 20px;
+      }
+
+      button {
+        font-size: 0.95em;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h2>🚀 Facility Siting Tool</h2>
+  <div class="upload-container">
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="custom-file-input">
+        <label class="file-label">📁 Choose a .zip shapefile</label>
+        <input type="file" name="file" id="fileInput" accept=".zip" />
+      </div>
+      <button type="submit">Upload & Visualize</button>
+    </form>
+    <div id="status"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([-22.559722, 17.083611], 12);
+    let currentLayer = null;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const formData = new FormData();
+      const fileInput = document.getElementById('fileInput');
+
+      if (!fileInput.files.length) {
+        alert('Please select a .zip file');
+        return;
+      }
+
+      formData.append('file', fileInput.files[0]);
+      document.getElementById('status').innerText = 'Uploading...';
+
+      const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (data.message === 'Success') {
+        document.getElementById('status').innerText = 'Upload complete. Displaying results...';
+        document.getElementById('successSound').play();  // ✅ Play chime sound
+
+        const geojsonUrl = `/uploads/top5.geojson`;
+
+        fetch(geojsonUrl)
+          .then(res => res.json())
+          .then(geoData => {
+            if (currentLayer) {
+              map.removeLayer(currentLayer);
+            }
+
+            currentLayer = L.geoJSON(geoData, {
+              style: {
+                color: '#ffd700',
+                weight: 2,
+                fillColor: '#daa520',
+                fillOpacity: 0.5
+              },
+              onEachFeature: function (feature, layer) {
+                const props = feature.properties;
+                const content = `
+                  <strong>Enumeration Area:</strong> ${props.ea || 'N/A'}<br>
+                  <strong>Region:</strong> ${props.region_nam || 'N/A'}<br>
+                  <strong>Constituency:</strong> ${props.constitue1 || 'N/A'}<br>
+                  <strong>Population Size:</strong> ${props.pop_size_n || 'N/A'}<br>
+                  <strong>Density (per km²):</strong> ${props.dens_sqkm || 'N/A'}<br>
+                  <strong>Area (m²):</strong> ${props.shape_area ? parseFloat(props.shape_area).toLocaleString() : 'N/A'}
+                `;
+                layer.bindPopup(content);
+              }
+            }).addTo(map);
+
+            map.fitBounds(currentLayer.getBounds());
+          })
+          .catch(err => {
+            console.error(err);
+            document.getElementById('status').innerText = 'Failed to load GeoJSON.';
+          });
+      } else {
+        document.getElementById('status').innerText = 'Error: ' + data.error;
+      }
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
